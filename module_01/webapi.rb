@@ -8,6 +8,8 @@ users = {
   john:     { first_name: 'John', last_name: 'Smith', age: 28 }
 }
 
+deleted_users = {}
+
 helpers do
   def json_or_default?(type)
     ['application/json', 'application/*', '*/*'].include?(type.to_s)
@@ -25,7 +27,7 @@ helpers do
       return 'xml' if xml?(type)
     end
 
-    halt 406, "Not Acceptable"
+    'json'
   end
 
   def type
@@ -41,13 +43,25 @@ helpers do
       Gyoku.xml(data[:xml].call) if data[:xml]
     end
   end
+
+  def error_415
+    halt 415 unless request.env['CONTENT_TYPE'] == 'application/json'
+  end
+
+  def parse_json
+    begin
+      user = JSON.parse(request.body.read)
+    rescue JSON::ParserError => e
+      halt 400, send_data(json: -> { { message: e.to_s } },
+                          xml:  -> { { message: e.to_s } })
+    end
+  end
 end
 
 get '/' do
   'Master Ruby Web APIs - Chapter 2'
 end
 
-# /users
 options '/users' do
   response.headers['Allow'] = 'HEAD,GET,POST'
   status 200
@@ -63,12 +77,25 @@ get '/users' do
 end
 
 post '/users' do
-  user = JSON.parse(request.body.read)
-  users[user['first_name'].downcase.to_sym] = user
+  error_415
+  parse_json
 
+  if users[user['first_name'].downcase.to_sym]
+    message = { message: "User #{user['first_name']} already in DB." }
+    halt 409, send_data(json: -> { message },
+                        xml:  -> { message })
+  end
+
+  users[user['first_name'].downcase.to_sym] = user
   url = "http://localhost:4567/users/#{user['first_name']}"
   response.headers['Location'] = url
   status 201
+end
+
+[:put, :patch, :delete].each do |method|
+  send(method, '/users') do
+    halt 405
+  end
 end
 
 options '/users/:first_name' do
@@ -77,19 +104,27 @@ options '/users/:first_name' do
 end
 
 get '/users/:first_name' do |first_name|
+  halt 410 if deleted_users[first_name.to_sym]
+  halt 404 unless users[first_name.to_sym]
+
   send_data(json: -> { users[first_name.to_sym].merge(id: first_name) },
             xml:  -> { { first_name => users[first_name.to_sym] } })
 end
 
 put '/users/:first_name' do |first_name|
-  user = JSON.parse(request.body.read)
+  error_415
+  user = parse_json
   existing = users[first_name.to_sym]
   users[first_name.to_sym] = user
   status existing ? 204 : 201
 end
 
 patch '/users/:first_name' do |first_name|
-  user_client = JSON.parse(request.body.read)
+  error_415
+  halt 410 if deleted_users[first_name.to_sym]
+  halt 404 unless users[first_name.to_sym]
+
+  user_client = parse_json
   user_server = users[first_name.to_sym]
 
   user_client.each do |key, value|
@@ -101,6 +136,8 @@ patch '/users/:first_name' do |first_name|
 end
 
 delete '/users/:first_name' do |first_name|
+  first_name = first_name.to_sym
+  deleted_users[first_name] = users[first_name] if users[first_name]
   users.delete(first_name.to_sym)
   status 204
 end
