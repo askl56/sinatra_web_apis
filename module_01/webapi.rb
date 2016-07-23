@@ -104,3 +104,13 @@ patch '/users/:first_name' do |first_name|
     Gyoku.xml(first_name => user_server)
   end
 end
+
+options '/users' do
+  response.headers['Allow'] = 'HEAD,GET,POST'
+  status 200
+end
+
+options '/users/:first_name' do
+  response.headers['Allow'] = 'GET,PUT,PATCH,DELETE'
+  status 200
+end
