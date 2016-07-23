@@ -1,5 +1,6 @@
 require 'sinatra'
 require 'json'
+require 'gyoku'
 
 users = {
   'andrew': 	{ first_name: 'Andrew', last_name: 'Scott', age: 24 },
@@ -7,10 +8,21 @@ users = {
   'john':     { first_name: 'John', last_name: 'Smith', age: 28 }
 }
 
-get '/' do
-	'master the API'
+before do
+  content_type 'application/json'
 end
 
-get '/users' do
-	users.map { |name, data| data.merge(id: name) }.to_json
+get '/' do
+  'master the API'
+end
+
+['/users', '/users.json'].each do |path|
+  get path do
+    users.map { |name, data| data.merge(id: name) }.to_json
+  end
+end
+
+get '/users.xml' do
+	content_type 'application/xml'
+	Gyoku.xml(users: users)
 end
